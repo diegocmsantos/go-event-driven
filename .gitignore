@@ -19,3 +19,5 @@
 
 # Go workspace file
 go.work
+# Exercise content is subject to Three Dots Labs' copyright.
+**/exercise.md
