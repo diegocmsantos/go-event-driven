@@ -40,48 +40,57 @@ func main() {
 		Client: rdb,
 	}, watermillLogger)
 
-	subscriber, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
-		Client: rdb,
-	}, watermillLogger)
+	router, err := message.NewRouter(message.RouterConfig{}, watermillLogger)
+	if err != nil {
+		panic(err)
+	}
 
 	go func() {
-		messages, err := subscriber.Subscribe(context.Background(), "issue-receipt")
+		sub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
+			Client: rdb,
+		}, watermillLogger)
 		if err != nil {
-			watermillLogger.Error("error subscribing the topic", err, watermill.LogFields{
-				"topic": "issue-receipt",
-			})
+			panic(err)
 		}
 		receiptsClient := NewReceiptsClient(clients)
-
-		for msg := range messages {
-			err = receiptsClient.IssueReceipt(context.Background(), string(msg.Payload))
-			if err != nil {
-				logrus.WithError(err).Error("failed to issue the receipt")
-				msg.Nack()
-				continue
-			}
-			msg.Ack()
-		}
+		router.AddNoPublisherHandler(
+			"receipts-hdl",
+			"issue-receipt",
+			sub,
+			func(msg *message.Message) error {
+				err = receiptsClient.IssueReceipt(context.Background(), string(msg.Payload))
+				if err != nil {
+					logrus.WithError(err).Error("failed to issue the receipt")
+					return err
+				}
+				return nil
+			},
+		)
 	}()
 
 	go func() {
-		messages, err := subscriber.Subscribe(context.Background(), "append-to-tracker")
+		sub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
+			Client: rdb,
+		}, watermillLogger)
 		if err != nil {
-			watermillLogger.Error("error subscribing the topic", err, watermill.LogFields{
-				"topic": "append-to-tracker",
-			})
+			panic(err)
 		}
 		spreadsheetsClient := NewSpreadsheetsClient(clients)
 
-		for msg := range messages {
-			err = spreadsheetsClient.AppendRow(context.Background(), "tickets-to-print", []string{string(msg.Payload)})
-			if err != nil {
-				logrus.WithError(err).Error("failed to append to tracker")
-				msg.Nack()
-				continue
-			}
-			msg.Ack()
-		}
+		router.AddNoPublisherHandler(
+			"spreadsheets-hdl",
+			"append-to-tracker",
+			sub,
+			func(msg *message.Message) error {
+
+				err = spreadsheetsClient.AppendRow(context.Background(), "tickets-to-print", []string{string(msg.Payload)})
+				if err != nil {
+					logrus.WithError(err).Error("failed to append to tracker")
+					return err
+				}
+				return nil
+			},
+		)
 	}()
 
 	e := commonHTTP.NewEcho()
@@ -100,6 +109,13 @@ func main() {
 
 		return c.NoContent(http.StatusOK)
 	})
+
+	go func() {
+		err := router.Run(context.Background())
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	logrus.Info("Server starting...")
 
