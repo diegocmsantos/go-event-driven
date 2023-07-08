@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,6 +21,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
+
+type PaymentCompleted struct {
+	OrderID     string
+	ConfirmedAt string
+}
 
 type TicketsConfirmationRequest struct {
 	Tickets []string `json:"tickets"`
@@ -97,6 +103,43 @@ func main() {
 					return err
 				}
 				return nil
+			},
+		)
+	}()
+
+	go func() {
+		sub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
+			Client: rdb,
+		}, watermillLogger)
+		if err != nil {
+			panic(err)
+		}
+		pub, err := redisstream.NewPublisher(redisstream.PublisherConfig{
+			Client: rdb,
+		}, watermillLogger)
+		if err != nil {
+			panic(err)
+		}
+
+		router.AddHandler(
+			"payment-complete-hdl",
+			"payment-complete",
+			sub,
+			"order-confirmed",
+			pub,
+			func(msg *message.Message) ([]*message.Message, error) {
+				var resultMsgs []*message.Message
+				var paymentCompleted PaymentCompleted
+				err := json.Unmarshal(msg.Payload, &paymentCompleted)
+				if err != nil {
+					return nil, nil
+				}
+				byts, err := json.Marshal(paymentCompleted)
+				if err != nil {
+					return nil, err
+				}
+				resultMsgs = append(resultMsgs, message.NewMessage(watermill.NewUUID(), byts))
+				return resultMsgs, nil
 			},
 		)
 	}()
