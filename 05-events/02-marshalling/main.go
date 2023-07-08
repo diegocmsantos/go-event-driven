@@ -18,7 +18,6 @@ type PaymentCompleted struct {
 }
 
 type OrderConfirmed struct {
-	PaymentID   string `json:"payment_id"`
 	OrderID     string `json:"order_id"`
 	ConfirmedAt string `json:"confirmed_at"`
 }
@@ -62,7 +61,6 @@ func main() {
 				return nil, err
 			}
 			confirmedOrder := OrderConfirmed{
-				PaymentID:   paymentCompleted.PaymentID,
 				OrderID:     paymentCompleted.OrderID,
 				ConfirmedAt: paymentCompleted.CompletedAt,
 			}
