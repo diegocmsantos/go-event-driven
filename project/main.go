@@ -118,6 +118,10 @@ func main() {
 		return c.NoContent(http.StatusOK)
 	})
 
+	e.GET("/health", func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	})
+
 	g.Go(func() error {
 		return router.Run(ctx)
 	})
@@ -125,6 +129,8 @@ func main() {
 	logrus.Info("Server starting...")
 
 	g.Go(func() error {
+		<-router.Running()
+
 		err = e.Start(":8080")
 		if err != nil && err != http.ErrServerClosed {
 			return err
