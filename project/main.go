@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 
 	"github.com/ThreeDotsLabs/go-event-driven/common/clients"
 	"github.com/ThreeDotsLabs/go-event-driven/common/clients/receipts"
@@ -17,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 type TicketsConfirmationRequest struct {
@@ -26,6 +28,12 @@ type TicketsConfirmationRequest struct {
 func main() {
 	log.Init(logrus.InfoLevel)
 	watermillLogger := log.NewWatermill(logrus.NewEntry(logrus.StandardLogger()))
+
+	ctx := context.Background()
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
+	defer cancel()
+
+	g, ctx := errgroup.WithContext(ctx)
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr: os.Getenv("REDIS_ADDR"),
@@ -110,17 +118,29 @@ func main() {
 		return c.NoContent(http.StatusOK)
 	})
 
-	go func() {
-		err := router.Run(context.Background())
-		if err != nil {
-			panic(err)
-		}
-	}()
+	g.Go(func() error {
+		return router.Run(ctx)
+	})
 
 	logrus.Info("Server starting...")
 
-	err = e.Start(":8080")
-	if err != nil && err != http.ErrServerClosed {
+	g.Go(func() error {
+		err = e.Start(":8080")
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		// Shut down the HTTP server
+		<-ctx.Done()
+		return e.Shutdown(ctx)
+	})
+
+	// Will block until all goroutines finish
+	err = g.Wait()
+	if err != nil {
 		panic(err)
 	}
 }
