@@ -27,135 +27,104 @@ type PaymentCompleted struct {
 	ConfirmedAt string
 }
 
-type TicketsConfirmationRequest struct {
+type TicketsStatusRequest struct {
 	Tickets []string `json:"tickets"`
+}
+
+type TicketsStatuses struct {
+	Tickets []TicketStatus
+}
+
+type TicketStatus struct {
+	TicketID      string `json:"ticket_id"`
+	Status        string `json:"status"`
+	CustomerEmail string `json:"customer_email"`
+	Price         Money  `json:"price"`
+}
+
+type Money struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+type IssueReceiptPayload struct {
+	TicketID string `json:"ticket_id"`
+	Price    Money  `json:"price"`
+}
+
+type AppendToTrackerPayload struct {
+	TicketID      string `json:"ticket_id"`
+	CustomerEmail string `json:"customer_email"`
+	Price         Money  `json:"price"`
 }
 
 func main() {
 	log.Init(logrus.InfoLevel)
 	watermillLogger := log.NewWatermill(logrus.NewEntry(logrus.StandardLogger()))
 
-	ctx := context.Background()
-	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
-	defer cancel()
-
-	g, ctx := errgroup.WithContext(ctx)
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: os.Getenv("REDIS_ADDR"),
-	})
-
 	clients, err := clients.NewClients(os.Getenv("GATEWAY_ADDR"), nil)
 	if err != nil {
 		panic(err)
 	}
 
-	publisher, err := redisstream.NewPublisher(redisstream.PublisherConfig{
+	receiptsClient := NewReceiptsClient(clients)
+	spreadsheetsClient := NewSpreadsheetsClient(clients)
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: os.Getenv("REDIS_ADDR"),
+	})
+
+	pub, err := redisstream.NewPublisher(redisstream.PublisherConfig{
 		Client: rdb,
 	}, watermillLogger)
 
-	router, err := message.NewRouter(message.RouterConfig{}, watermillLogger)
+	issueReceiptSub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
+		Client:        rdb,
+		ConsumerGroup: "issue-receipt",
+	}, watermillLogger)
 	if err != nil {
 		panic(err)
 	}
 
-	go func() {
-		sub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
-			Client: rdb,
-		}, watermillLogger)
-		if err != nil {
-			panic(err)
-		}
-		receiptsClient := NewReceiptsClient(clients)
-		router.AddNoPublisherHandler(
-			"receipts-hdl",
-			"issue-receipt",
-			sub,
-			func(msg *message.Message) error {
-				err = receiptsClient.IssueReceipt(context.Background(), string(msg.Payload))
-				if err != nil {
-					logrus.WithError(err).Error("failed to issue the receipt")
-					return err
-				}
-				return nil
-			},
-		)
-	}()
-
-	go func() {
-		sub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
-			Client: rdb,
-		}, watermillLogger)
-		if err != nil {
-			panic(err)
-		}
-		spreadsheetsClient := NewSpreadsheetsClient(clients)
-
-		router.AddNoPublisherHandler(
-			"spreadsheets-hdl",
-			"append-to-tracker",
-			sub,
-			func(msg *message.Message) error {
-
-				err = spreadsheetsClient.AppendRow(context.Background(), "tickets-to-print", []string{string(msg.Payload)})
-				if err != nil {
-					logrus.WithError(err).Error("failed to append to tracker")
-					return err
-				}
-				return nil
-			},
-		)
-	}()
-
-	go func() {
-		sub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
-			Client: rdb,
-		}, watermillLogger)
-		if err != nil {
-			panic(err)
-		}
-		pub, err := redisstream.NewPublisher(redisstream.PublisherConfig{
-			Client: rdb,
-		}, watermillLogger)
-		if err != nil {
-			panic(err)
-		}
-
-		router.AddHandler(
-			"payment-complete-hdl",
-			"payment-complete",
-			sub,
-			"order-confirmed",
-			pub,
-			func(msg *message.Message) ([]*message.Message, error) {
-				var resultMsgs []*message.Message
-				var paymentCompleted PaymentCompleted
-				err := json.Unmarshal(msg.Payload, &paymentCompleted)
-				if err != nil {
-					return nil, nil
-				}
-				byts, err := json.Marshal(paymentCompleted)
-				if err != nil {
-					return nil, err
-				}
-				resultMsgs = append(resultMsgs, message.NewMessage(watermill.NewUUID(), byts))
-				return resultMsgs, nil
-			},
-		)
-	}()
+	appendToTrackerSub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
+		Client:        rdb,
+		ConsumerGroup: "append-to-tracker",
+	}, watermillLogger)
+	if err != nil {
+		panic(err)
+	}
 
 	e := commonHTTP.NewEcho()
 
-	e.POST("/tickets-confirmation", func(c echo.Context) error {
-		var request TicketsConfirmationRequest
+	e.POST("/tickets-status", func(c echo.Context) error {
+		var request TicketsStatuses
 		err := c.Bind(&request)
 		if err != nil {
 			return err
 		}
 
 		for _, ticket := range request.Tickets {
-			publisher.Publish("issue-receipt", message.NewMessage(watermill.NewUUID(), []byte(ticket)))
-			publisher.Publish("append-to-tracker", message.NewMessage(watermill.NewUUID(), []byte(ticket)))
+			body := IssueReceiptPayload{
+				TicketID: ticket.TicketID,
+				Price:    ticket.Price,
+			}
+			payload, err := json.Marshal(body)
+			if err != nil {
+				return err
+			}
+			msg := message.NewMessage(watermill.NewUUID(), payload)
+			pub.Publish("issue-receipt", msg)
+
+			appendToTrackerPayload := AppendToTrackerPayload{
+				TicketID:      ticket.TicketID,
+				CustomerEmail: ticket.CustomerEmail,
+				Price:         ticket.Price,
+			}
+			payload, err = json.Marshal(appendToTrackerPayload)
+			if err != nil {
+				return err
+			}
+			pub.Publish("append-to-tracker", message.NewMessage(watermill.NewUUID(), payload))
 		}
 
 		return c.NoContent(http.StatusOK)
@@ -164,6 +133,60 @@ func main() {
 	e.GET("/health", func(c echo.Context) error {
 		return c.String(http.StatusOK, "ok")
 	})
+
+	router, err := message.NewRouter(message.RouterConfig{}, watermillLogger)
+	if err != nil {
+		panic(err)
+	}
+
+	router.AddNoPublisherHandler(
+		"receipts-hdl",
+		"issue-receipt",
+		issueReceiptSub,
+		func(msg *message.Message) error {
+			var issueReceiptPayload IssueReceiptPayload
+			err := json.Unmarshal(msg.Payload, &issueReceiptPayload)
+			if err != nil {
+				logrus.WithError(err).Error("failed to unmarshall")
+				return err
+			}
+			err = receiptsClient.IssueReceipt(context.Background(), IssueReceiptRequest{
+				TicketID: issueReceiptPayload.TicketID,
+				Price:    issueReceiptPayload.Price,
+			})
+			if err != nil {
+				logrus.WithError(err).Error("failed to issue the receipt")
+				return err
+			}
+			return nil
+		},
+	)
+
+	router.AddNoPublisherHandler(
+		"spreadsheets-hdl",
+		"append-to-tracker",
+		appendToTrackerSub,
+		func(msg *message.Message) error {
+			var payload AppendToTrackerPayload
+			err := json.Unmarshal(msg.Payload, &payload)
+			if err != nil {
+				logrus.WithError(err).Error("failed to unmarshall")
+				return err
+			}
+			err = spreadsheetsClient.AppendRow(msg.Context(), "tickets-to-print",
+				[]string{payload.TicketID, payload.CustomerEmail, payload.Price.Amount, payload.Price.Currency})
+			if err != nil {
+				logrus.WithError(err).Error("failed to append to tracker")
+				return err
+			}
+			return nil
+		},
+	)
+
+	ctx := context.Background()
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		return router.Run(ctx)
@@ -204,9 +227,18 @@ func NewReceiptsClient(clients *clients.Clients) ReceiptsClient {
 	}
 }
 
-func (c ReceiptsClient) IssueReceipt(ctx context.Context, ticketID string) error {
+type IssueReceiptRequest struct {
+	TicketID string
+	Price    Money
+}
+
+func (c ReceiptsClient) IssueReceipt(ctx context.Context, request IssueReceiptRequest) error {
 	body := receipts.PutReceiptsJSONRequestBody{
-		TicketId: ticketID,
+		TicketId: request.TicketID,
+		Price: receipts.Money{
+			MoneyAmount:   request.Price.Amount,
+			MoneyCurrency: request.Price.Currency,
+		},
 	}
 
 	receiptsResp, err := c.clients.Receipts.PutReceiptsWithResponse(ctx, body)
