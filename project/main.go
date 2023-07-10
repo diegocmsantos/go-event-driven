@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/ThreeDotsLabs/go-event-driven/common/clients"
 	"github.com/ThreeDotsLabs/go-event-driven/common/clients/receipts"
@@ -58,6 +59,25 @@ type AppendToTrackerPayload struct {
 	Price         Money  `json:"price"`
 }
 
+type Header struct {
+	ID          string `json:"id"`
+	PublishedAt string `json:"published_at"`
+}
+
+func NewHeader() Header {
+	return Header{
+		ID:          watermill.NewUUID(),
+		PublishedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+type TicketBookingConfirmed struct {
+	Header        Header `json:"header"`
+	TicketID      string `json:"ticket_id"`
+	CustomerEmail string `json:"customer_email"`
+	Price         Money  `json:"price"`
+}
+
 func main() {
 	log.Init(logrus.InfoLevel)
 	watermillLogger := log.NewWatermill(logrus.NewEntry(logrus.StandardLogger()))
@@ -104,27 +124,17 @@ func main() {
 		}
 
 		for _, ticket := range request.Tickets {
-			body := IssueReceiptPayload{
-				TicketID: ticket.TicketID,
-				Price:    ticket.Price,
-			}
-			payload, err := json.Marshal(body)
-			if err != nil {
-				return err
-			}
-			msg := message.NewMessage(watermill.NewUUID(), payload)
-			pub.Publish("issue-receipt", msg)
-
-			appendToTrackerPayload := AppendToTrackerPayload{
+			ticketEvent := TicketBookingConfirmed{
+				Header:        NewHeader(),
 				TicketID:      ticket.TicketID,
 				CustomerEmail: ticket.CustomerEmail,
 				Price:         ticket.Price,
 			}
-			payload, err = json.Marshal(appendToTrackerPayload)
+			payload, err := json.Marshal(ticketEvent)
 			if err != nil {
 				return err
 			}
-			pub.Publish("append-to-tracker", message.NewMessage(watermill.NewUUID(), payload))
+			pub.Publish("TicketBookingConfirmed", message.NewMessage(watermill.NewUUID(), payload))
 		}
 
 		return c.NoContent(http.StatusOK)
@@ -141,7 +151,7 @@ func main() {
 
 	router.AddNoPublisherHandler(
 		"receipts-hdl",
-		"issue-receipt",
+		"TicketBookingConfirmed",
 		issueReceiptSub,
 		func(msg *message.Message) error {
 			var issueReceiptPayload IssueReceiptPayload
@@ -164,7 +174,7 @@ func main() {
 
 	router.AddNoPublisherHandler(
 		"spreadsheets-hdl",
-		"append-to-tracker",
+		"TicketBookingConfirmed",
 		appendToTrackerSub,
 		func(msg *message.Message) error {
 			var payload AppendToTrackerPayload
