@@ -59,6 +59,12 @@ type AppendToTrackerPayload struct {
 	Price         Money  `json:"price"`
 }
 
+type TicketToRefundPayload struct {
+	TicketID      string `json:"ticket_id"`
+	CustomerEmail string `json:"customer_email"`
+	Price         Money  `json:"price"`
+}
+
 type Header struct {
 	ID          string `json:"id"`
 	PublishedAt string `json:"published_at"`
@@ -72,6 +78,13 @@ func NewHeader() Header {
 }
 
 type TicketBookingConfirmed struct {
+	Header        Header `json:"header"`
+	TicketID      string `json:"ticket_id"`
+	CustomerEmail string `json:"customer_email"`
+	Price         Money  `json:"price"`
+}
+
+type TicketBookingCanceled struct {
 	Header        Header `json:"header"`
 	TicketID      string `json:"ticket_id"`
 	CustomerEmail string `json:"customer_email"`
@@ -114,6 +127,14 @@ func main() {
 		panic(err)
 	}
 
+	ticketRefundSub, err := redisstream.NewSubscriber(redisstream.SubscriberConfig{
+		Client:        rdb,
+		ConsumerGroup: "ticket-to-refund",
+	}, watermillLogger)
+	if err != nil {
+		panic(err)
+	}
+
 	e := commonHTTP.NewEcho()
 
 	e.POST("/tickets-status", func(c echo.Context) error {
@@ -134,7 +155,13 @@ func main() {
 			if err != nil {
 				return err
 			}
-			pub.Publish("TicketBookingConfirmed", message.NewMessage(watermill.NewUUID(), payload))
+			msg := message.NewMessage(watermill.NewUUID(), payload)
+			switch ticket.Status {
+			case "confirmed":
+				pub.Publish("TicketBookingConfirmed", msg)
+			case "canceled":
+				pub.Publish("TicketBookingCanceled", msg)
+			}
 		}
 
 		return c.NoContent(http.StatusOK)
@@ -184,6 +211,27 @@ func main() {
 				return err
 			}
 			err = spreadsheetsClient.AppendRow(msg.Context(), "tickets-to-print",
+				[]string{payload.TicketID, payload.CustomerEmail, payload.Price.Amount, payload.Price.Currency})
+			if err != nil {
+				logrus.WithError(err).Error("failed to append to tracker")
+				return err
+			}
+			return nil
+		},
+	)
+
+	router.AddNoPublisherHandler(
+		"ticketToRefund-hdl",
+		"TicketBookingCanceled",
+		ticketRefundSub,
+		func(msg *message.Message) error {
+			var payload TicketToRefundPayload
+			err := json.Unmarshal(msg.Payload, &payload)
+			if err != nil {
+				logrus.WithError(err).Error("failed to unmarshall")
+				return err
+			}
+			err = spreadsheetsClient.AppendRow(msg.Context(), "tickets-to-refund",
 				[]string{payload.TicketID, payload.CustomerEmail, payload.Price.Amount, payload.Price.Currency})
 			if err != nil {
 				logrus.WithError(err).Error("failed to append to tracker")
