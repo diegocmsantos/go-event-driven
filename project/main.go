@@ -158,9 +158,14 @@ func main() {
 			msg := message.NewMessage(watermill.NewUUID(), payload)
 			switch ticket.Status {
 			case "confirmed":
-				pub.Publish("TicketBookingConfirmed", msg)
+				err = pub.Publish("TicketBookingConfirmed", msg)
 			case "canceled":
-				pub.Publish("TicketBookingCanceled", msg)
+				err = pub.Publish("TicketBookingCanceled", msg)
+			default:
+				return fmt.Errorf("unknown ticket status: %s", ticket.Status)
+			}
+			if err != nil {
+				return err
 			}
 		}
 
