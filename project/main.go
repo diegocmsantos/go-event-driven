@@ -17,6 +17,8 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-redisstream/pkg/redisstream"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
@@ -156,6 +158,7 @@ func main() {
 				return err
 			}
 			msg := message.NewMessage(watermill.NewUUID(), payload)
+			middleware.SetCorrelationID(uuid.NewString(), msg)
 			switch ticket.Status {
 			case "confirmed":
 				err = pub.Publish("TicketBookingConfirmed", msg)
@@ -180,6 +183,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	router.AddMiddleware(logMessageMiddleware)
 
 	router.AddNoPublisherHandler(
 		"receipts-hdl",
@@ -351,4 +355,11 @@ const (
 type Message struct {
 	Task     Task
 	TicketID string
+}
+
+func logMessageMiddleware(h message.HandlerFunc) message.HandlerFunc {
+	return func(msg *message.Message) ([]*message.Message, error) {
+		logrus.WithField("message_uuid", middleware.MessageCorrelationID(msg)).Info("Handling a message")
+		return h(msg)
+	}
 }
