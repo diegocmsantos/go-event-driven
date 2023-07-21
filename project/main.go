@@ -18,8 +18,8 @@ import (
 	"github.com/ThreeDotsLabs/watermill-redisstream/pkg/redisstream"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/lithammer/shortuuid/v3"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -97,7 +97,13 @@ func main() {
 	log.Init(logrus.InfoLevel)
 	watermillLogger := log.NewWatermill(logrus.NewEntry(logrus.StandardLogger()))
 
-	clients, err := clients.NewClients(os.Getenv("GATEWAY_ADDR"), nil)
+	clients, err := clients.NewClients(
+		os.Getenv("GATEWAY_ADDR"),
+		func(ctx context.Context, req *http.Request) error {
+			req.Header.Set("Correlation-ID", log.CorrelationIDFromContext(ctx))
+			return nil
+		},
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -158,7 +164,7 @@ func main() {
 				return err
 			}
 			msg := message.NewMessage(watermill.NewUUID(), payload)
-			middleware.SetCorrelationID(uuid.NewString(), msg)
+			msg.Metadata.Set("correlation_id", c.Request().Header.Get("Correlation-ID"))
 			switch ticket.Status {
 			case "confirmed":
 				err = pub.Publish("TicketBookingConfirmed", msg)
@@ -184,6 +190,7 @@ func main() {
 		panic(err)
 	}
 	router.AddMiddleware(logMessageMiddleware)
+	router.AddMiddleware(correlationIDMiddleware)
 
 	router.AddNoPublisherHandler(
 		"receipts-hdl",
@@ -196,7 +203,7 @@ func main() {
 				logrus.WithError(err).Error("failed to unmarshall")
 				return err
 			}
-			err = receiptsClient.IssueReceipt(context.Background(), IssueReceiptRequest{
+			err = receiptsClient.IssueReceipt(msg.Context(), IssueReceiptRequest{
 				TicketID: issueReceiptPayload.TicketID,
 				Price:    issueReceiptPayload.Price,
 			})
@@ -360,6 +367,19 @@ type Message struct {
 func logMessageMiddleware(h message.HandlerFunc) message.HandlerFunc {
 	return func(msg *message.Message) ([]*message.Message, error) {
 		logrus.WithField("message_uuid", middleware.MessageCorrelationID(msg)).Info("Handling a message")
+		return h(msg)
+	}
+}
+
+func correlationIDMiddleware(h message.HandlerFunc) message.HandlerFunc {
+	return func(msg *message.Message) ([]*message.Message, error) {
+		ctx := msg.Context()
+		correlationID := msg.Metadata.Get("correlation_id")
+		if correlationID == "" {
+			correlationID = shortuuid.New()
+		}
+		ctx = log.ContextWithCorrelationID(msg.Context(), correlationID)
+		msg.SetContext(ctx)
 		return h(msg)
 	}
 }
