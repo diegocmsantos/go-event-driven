@@ -189,8 +189,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	router.AddMiddleware(logMessageMiddleware)
 	router.AddMiddleware(correlationIDMiddleware)
+	router.AddMiddleware(logMessageMiddleware)
 
 	router.AddNoPublisherHandler(
 		"receipts-hdl",
@@ -366,7 +366,9 @@ type Message struct {
 
 func logMessageMiddleware(h message.HandlerFunc) message.HandlerFunc {
 	return func(msg *message.Message) ([]*message.Message, error) {
-		logrus.WithField("message_uuid", middleware.MessageCorrelationID(msg)).Info("Handling a message")
+		log.FromContext(msg.Context()).
+			WithField("message_uuid", middleware.MessageCorrelationID(msg)).
+			Info("Handling a message")
 		return h(msg)
 	}
 }
@@ -378,7 +380,8 @@ func correlationIDMiddleware(h message.HandlerFunc) message.HandlerFunc {
 		if correlationID == "" {
 			correlationID = shortuuid.New()
 		}
-		ctx = log.ContextWithCorrelationID(msg.Context(), correlationID)
+		ctx = log.ToContext(ctx, logrus.WithField("correlation_id", correlationID))
+		ctx = log.ContextWithCorrelationID(ctx, correlationID)
 		msg.SetContext(ctx)
 		return h(msg)
 	}
