@@ -218,6 +218,9 @@ func main() {
 				logrus.WithError(err).Error("failed to unmarshall")
 				return nil
 			}
+			if issueReceiptPayload.Price.Currency == "" {
+				issueReceiptPayload.Price.Currency = "USD"
+			}
 			err = receiptsClient.IssueReceipt(msg.Context(), IssueReceiptRequest{
 				TicketID: issueReceiptPayload.TicketID,
 				Price:    issueReceiptPayload.Price,
@@ -246,6 +249,9 @@ func main() {
 			if err != nil {
 				logrus.WithError(err).Error("failed to unmarshall")
 				return nil
+			}
+			if payload.Price.Currency == "" {
+				payload.Price.Currency = "USD"
 			}
 			err = spreadsheetsClient.AppendRow(msg.Context(), "tickets-to-print",
 				[]string{payload.TicketID, payload.CustomerEmail, payload.Price.Amount, payload.Price.Currency})
