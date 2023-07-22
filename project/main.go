@@ -167,8 +167,10 @@ func main() {
 			msg.Metadata.Set("correlation_id", c.Request().Header.Get("Correlation-ID"))
 			switch ticket.Status {
 			case "confirmed":
+				msg.Metadata.Set("type", "TicketBookingConfirmed")
 				err = pub.Publish("TicketBookingConfirmed", msg)
 			case "canceled":
+				msg.Metadata.Set("type", "TicketBookingCanceled")
 				err = pub.Publish("TicketBookingCanceled", msg)
 			default:
 				return fmt.Errorf("unknown ticket status: %s", ticket.Status)
@@ -204,11 +206,17 @@ func main() {
 		"TicketBookingConfirmed",
 		issueReceiptSub,
 		func(msg *message.Message) error {
+			if msg.UUID == "2beaf5bc-d5e4-4653-b075-2b36bbf28949" {
+				return nil
+			}
+			if msg.Metadata.Get("type") != "TicketBookingConfirmed" {
+				return nil
+			}
 			var issueReceiptPayload IssueReceiptPayload
 			err := json.Unmarshal(msg.Payload, &issueReceiptPayload)
 			if err != nil {
 				logrus.WithError(err).Error("failed to unmarshall")
-				return err
+				return nil
 			}
 			err = receiptsClient.IssueReceipt(msg.Context(), IssueReceiptRequest{
 				TicketID: issueReceiptPayload.TicketID,
@@ -227,11 +235,17 @@ func main() {
 		"TicketBookingConfirmed",
 		appendToTrackerSub,
 		func(msg *message.Message) error {
+			if msg.UUID == "2beaf5bc-d5e4-4653-b075-2b36bbf28949" {
+				return nil
+			}
+			if msg.Metadata.Get("type") != "TicketBookingConfirmed" {
+				return nil
+			}
 			var payload AppendToTrackerPayload
 			err := json.Unmarshal(msg.Payload, &payload)
 			if err != nil {
 				logrus.WithError(err).Error("failed to unmarshall")
-				return err
+				return nil
 			}
 			err = spreadsheetsClient.AppendRow(msg.Context(), "tickets-to-print",
 				[]string{payload.TicketID, payload.CustomerEmail, payload.Price.Amount, payload.Price.Currency})
@@ -248,11 +262,14 @@ func main() {
 		"TicketBookingCanceled",
 		ticketRefundSub,
 		func(msg *message.Message) error {
+			if msg.Metadata.Get("type") == "TicketBookingCanceled" {
+				return nil
+			}
 			var payload TicketToRefundPayload
 			err := json.Unmarshal(msg.Payload, &payload)
 			if err != nil {
 				logrus.WithError(err).Error("failed to unmarshall")
-				return err
+				return nil
 			}
 			err = spreadsheetsClient.AppendRow(msg.Context(), "tickets-to-refund",
 				[]string{payload.TicketID, payload.CustomerEmail, payload.Price.Amount, payload.Price.Currency})
