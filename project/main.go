@@ -191,6 +191,13 @@ func main() {
 	}
 	router.AddMiddleware(correlationIDMiddleware)
 	router.AddMiddleware(logMessageMiddleware)
+	router.AddMiddleware(middleware.Retry{
+		MaxRetries:      10,
+		InitialInterval: time.Millisecond * 100,
+		MaxInterval:     time.Second,
+		Multiplier:      2,
+		Logger:          watermillLogger,
+	}.Middleware)
 
 	router.AddNoPublisherHandler(
 		"receipts-hdl",
@@ -366,10 +373,18 @@ type Message struct {
 
 func logMessageMiddleware(h message.HandlerFunc) message.HandlerFunc {
 	return func(msg *message.Message) ([]*message.Message, error) {
-		log.FromContext(msg.Context()).
-			WithField("message_uuid", middleware.MessageCorrelationID(msg)).
+		logger := log.FromContext(msg.Context())
+		msgs, err := h(msg)
+		if err != nil {
+			fmt.Println("Etrou aqui")
+			logger.WithField("error", err).
+				WithField("message_uuid", middleware.MessageCorrelationID(msg)).
+				Error("Message handling error")
+			return nil, err
+		}
+		logger.WithField("message_uuid", middleware.MessageCorrelationID(msg)).
 			Info("Handling a message")
-		return h(msg)
+		return msgs, nil
 	}
 }
 
