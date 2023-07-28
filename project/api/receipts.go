@@ -50,3 +50,10 @@ func (c ReceiptsServiceClient) IssueReceipt(ctx context.Context, request entitie
 		return entities.IssueReceiptResponse{}, fmt.Errorf("unexpected status code for POST receipts-api/receipts: %d", resp.StatusCode())
 	}
 }
+
+type ReceiptsMock struct {
+}
+
+func (c ReceiptsMock) IssueReceipt(ctx context.Context, request entities.IssueReceiptRequest) (entities.IssueReceiptResponse, error) {
+	return entities.IssueReceiptResponse{}, nil
+}
