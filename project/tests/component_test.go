@@ -37,20 +37,31 @@ func TestComponent(t *testing.T) {
 			receiptsService,
 		)
 		assert.NoError(t, svc.Run(ctx))
-
-		ticketStatus := TicketStatus{
-			TicketID: shortuuid.New(),
-			Status:   "confirmed",
-			Price:    Money{Amount: "100", Currency: "USD"},
-		}
-
-		sendTicketsStatus(t, TicketsStatusRequest{
-			Tickets: []TicketStatus{ticketStatus},
-		})
-		assertReceiptForTicketIssued(t, receiptsService, ticketStatus)
 	}()
 
 	waitForHttpServer(t)
+
+	ticketStatusConfirmed := TicketStatus{
+		TicketID: shortuuid.New(),
+		Status:   "confirmed",
+		Price:    Money{Amount: "100", Currency: "USD"},
+	}
+	ticketStatusCanceled := TicketStatus{
+		TicketID: shortuuid.New(),
+		Status:   "canceled",
+		Price:    Money{Amount: "200", Currency: "USD"},
+	}
+
+	sendTicketsStatus(t, TicketsStatusRequest{
+		Tickets: []TicketStatus{ticketStatusConfirmed},
+	})
+	assertReceiptForTicketIssued(t, receiptsService, ticketStatusConfirmed)
+	assertRowToSheetAdded(t, spreadsheetsService, ticketStatusConfirmed, "tickets-to-print")
+
+	sendTicketsStatus(t, TicketsStatusRequest{
+		Tickets: []TicketStatus{ticketStatusCanceled},
+	})
+	assertRowToSheetAdded(t, spreadsheetsService, ticketStatusCanceled, "tickets-to-refund")
 }
 
 func waitForHttpServer(t *testing.T) {
@@ -147,4 +158,29 @@ func assertReceiptForTicketIssued(t *testing.T, receiptsService *api.ReceiptsMoc
 	assert.Equal(t, ticket.TicketID, receipt.TicketID)
 	assert.Equal(t, ticket.Price.Amount, receipt.Price.Amount)
 	assert.Equal(t, ticket.Price.Currency, receipt.Price.Currency)
+}
+
+func assertRowToSheetAdded(t *testing.T, spreadsheetsService *api.SpreadsheetsMock, ticket TicketStatus,
+	sheetName string) bool {
+	return assert.EventuallyWithT(
+		t,
+		func(t *assert.CollectT) {
+			rows, ok := spreadsheetsService.Rows[sheetName]
+			if !assert.True(t, ok, "sheet %s not found", sheetName) {
+				return
+			}
+
+			allValues := []string{}
+
+			for _, row := range rows {
+				for _, col := range row {
+					allValues = append(allValues, col)
+				}
+			}
+
+			assert.Contains(t, allValues, ticket.TicketID, "ticket id not found in sheet %s", sheetName)
+		},
+		10*time.Second,
+		100*time.Millisecond,
+	)
 }

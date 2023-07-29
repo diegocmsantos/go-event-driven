@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 
 	"tickets/entities"
 
@@ -51,13 +50,4 @@ func (c ReceiptsServiceClient) IssueReceipt(ctx context.Context, request entitie
 	default:
 		return entities.IssueReceiptResponse{}, fmt.Errorf("unexpected status code for POST receipts-api/receipts: %d", resp.StatusCode())
 	}
-}
-
-type ReceiptsMock struct {
-	mock           sync.Mutex
-	IssuedReceipts []entities.IssueReceiptRequest
-}
-
-func (c *ReceiptsMock) IssueReceipt(ctx context.Context, request entities.IssueReceiptRequest) (entities.IssueReceiptResponse, error) {
-	return entities.IssueReceiptResponse{}, nil
 }

@@ -1,6 +1,6 @@
 package entities
 
-type TicketRefund struct {
+type RefundTicket struct {
 	Header   EventHeader `json:"header"`
 	TicketID string      `json:"ticket_id"`
 }

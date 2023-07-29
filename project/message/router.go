@@ -2,6 +2,7 @@ package message
 
 import (
 	"encoding/json"
+
 	"tickets/entities"
 	"tickets/message/event"
 
@@ -107,7 +108,7 @@ func NewWatermillRouter(receiptsService event.ReceiptsService, spreadsheetsServi
 		"TicketBookingCanceled",
 		cancelTicketSub,
 		func(msg *message.Message) error {
-			if msg.Metadata.Get("type") == "TicketBookingCanceled" {
+			if msg.Metadata.Get("type") != "TicketBookingCanceled" {
 				return nil
 			}
 			var event entities.TicketBookingCanceled

@@ -34,9 +34,3 @@ func (c SpreadsheetsAPIClient) AppendRow(ctx context.Context, spreadsheetName st
 
 	return nil
 }
-
-type SpreadsheetsMock struct{}
-
-func (c SpreadsheetsMock) AppendRow(ctx context.Context, spreadsheetName string, row []string) error {
-	return nil
-}
