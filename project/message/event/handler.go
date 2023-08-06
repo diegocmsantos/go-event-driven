@@ -5,7 +5,7 @@ import (
 	"tickets/entities"
 )
 
-type Handler struct {
+type EventHandler struct {
 	spreadsheetsService SpreadsheetsAPI
 	receiptsService     ReceiptsService
 }
@@ -13,7 +13,7 @@ type Handler struct {
 func NewHandler(
 	spreadsheetsService SpreadsheetsAPI,
 	receiptsService ReceiptsService,
-) Handler {
+) EventHandler {
 	if spreadsheetsService == nil {
 		panic("missing spreadsheetsService")
 	}
@@ -21,7 +21,7 @@ func NewHandler(
 		panic("missing receiptsService")
 	}
 
-	return Handler{
+	return EventHandler{
 		spreadsheetsService: spreadsheetsService,
 		receiptsService:     receiptsService,
 	}

@@ -31,3 +31,8 @@ type TicketBookingCanceled struct {
 	CustomerEmail string      `json:"customer_email"`
 	Price         Money       `json:"price"`
 }
+
+type TicketRefunded struct {
+	Header   EventHeader `json:"header"`
+	TicketID string      `json:"ticket_id"`
+}
