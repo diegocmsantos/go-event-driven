@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"tickets/db"
 	ticketHttp "tickets/http"
 	"tickets/message"
 	"tickets/message/event"
 
 	"github.com/ThreeDotsLabs/go-event-driven/common/log"
 	watermillMessage "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
@@ -22,9 +25,11 @@ func init() {
 type Service struct {
 	watermillRouter *watermillMessage.Router
 	echoRouter      *echo.Echo
+	db              *sqlx.DB
 }
 
 func New(
+	dbConn *sqlx.DB,
 	redisClient *redis.Client,
 	spreadsheetsService event.SpreadsheetsAPI,
 	receiptsService event.ReceiptsService,
@@ -58,10 +63,15 @@ func New(
 	return Service{
 		watermillRouter,
 		echoRouter,
+		dbConn,
 	}
 }
 
 func (s Service) Run(ctx context.Context) error {
+	if err := db.InitializeDatabaseSchema(s.db); err != nil {
+		return fmt.Errorf("failed to initialize database schema: %w", err)
+	}
+
 	errgrp, ctx := errgroup.WithContext(ctx)
 
 	errgrp.Go(func() error {
