@@ -1,0 +1,58 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jmoiron/sqlx"
+)
+
+type TicketRepositoryInt interface {
+	CreateTicket(ctx context.Context, createTicketInput CreateTicketInput) error
+	DeleteTicket(ctx context.Context, createTicketInput DeleteTicketInput) error
+}
+
+type CreateTicketInput struct {
+	TicketID      string
+	PriceAmount   string
+	PriceCurrency string
+	CustomerEmail string
+}
+
+type DeleteTicketInput struct {
+	TicketID string
+}
+
+type TicketRepository struct {
+	db *sqlx.DB
+}
+
+func NewTicketRepository(db *sqlx.DB) *TicketRepository {
+	if db == nil {
+		panic("error creating ticket repository, db cannot be nil")
+	}
+	return &TicketRepository{db: db}
+}
+
+func (tr TicketRepository) CreateTicket(ctx context.Context, createTicketInput CreateTicketInput) error {
+	_, err := tr.db.ExecContext(ctx, "INSERT INTO tickets (ticket_id, price_amount, price_currency, customer_email) VALUES ($1, $2, $3, $4)",
+		createTicketInput.TicketID,
+		createTicketInput.PriceAmount,
+		createTicketInput.PriceCurrency,
+		createTicketInput.CustomerEmail,
+	)
+	if err != nil {
+		return fmt.Errorf("error saving ticket: %w", err)
+	}
+	return nil
+}
+
+func (tr TicketRepository) DeleteTicket(ctx context.Context, deleteTicketInput DeleteTicketInput) error {
+	_, err := tr.db.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_id = $1",
+		deleteTicketInput.TicketID,
+	)
+	if err != nil {
+		return fmt.Errorf("error deleting ticket: %w", err)
+	}
+	return nil
+}

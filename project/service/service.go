@@ -8,6 +8,7 @@ import (
 	ticketHttp "tickets/http"
 	"tickets/message"
 	"tickets/message/event"
+	"tickets/repository"
 
 	"github.com/ThreeDotsLabs/go-event-driven/common/log"
 	watermillMessage "github.com/ThreeDotsLabs/watermill/message"
@@ -42,9 +43,12 @@ func New(
 
 	eventBus := event.NewBus(redisPublisher)
 
+	ticketRepository := repository.NewTicketRepository(dbConn)
+
 	eventsHandler := event.NewHandler(
 		spreadsheetsService,
 		receiptsService,
+		ticketRepository,
 	)
 
 	eventProcessorConfig := event.NewProcessorConfig(redisClient, watermillLogger)

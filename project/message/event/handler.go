@@ -2,17 +2,21 @@ package event
 
 import (
 	"context"
+
 	"tickets/entities"
+	"tickets/repository"
 )
 
 type EventHandler struct {
 	spreadsheetsService SpreadsheetsAPI
 	receiptsService     ReceiptsService
+	ticketRepository    repository.TicketRepositoryInt
 }
 
 func NewHandler(
 	spreadsheetsService SpreadsheetsAPI,
 	receiptsService ReceiptsService,
+	ticketRepository repository.TicketRepositoryInt,
 ) EventHandler {
 	if spreadsheetsService == nil {
 		panic("missing spreadsheetsService")
@@ -20,10 +24,14 @@ func NewHandler(
 	if receiptsService == nil {
 		panic("missing receiptsService")
 	}
+	if ticketRepository == nil {
+		panic("missing ticketRepository")
+	}
 
 	return EventHandler{
 		spreadsheetsService: spreadsheetsService,
 		receiptsService:     receiptsService,
+		ticketRepository:    ticketRepository,
 	}
 }
 

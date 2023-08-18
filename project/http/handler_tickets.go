@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"net/http"
+
 	"tickets/entities"
 
 	"github.com/labstack/echo/v4"
@@ -28,19 +29,25 @@ func (h Handler) PostTicketsStatus(c echo.Context) error {
 	}
 
 	for _, ticket := range request.Tickets {
-		ticketEvent := entities.TicketBookingConfirmed{
-			Header:        entities.NewHeader(),
-			TicketID:      ticket.TicketID,
-			CustomerEmail: ticket.CustomerEmail,
-			Price:         ticket.Price,
-		}
 		switch ticket.Status {
 		case "confirmed":
-			if err = h.eventBus.Publish(c.Request().Context(), ticketEvent); err != nil {
+			createEvent := entities.TicketBookingConfirmed{
+				Header:        entities.NewHeader(),
+				TicketID:      ticket.TicketID,
+				CustomerEmail: ticket.CustomerEmail,
+				Price:         ticket.Price,
+			}
+			if err = h.eventBus.Publish(c.Request().Context(), createEvent); err != nil {
 				return fmt.Errorf("failed to publish TicketBookingConfirmed event: %w", err)
 			}
 		case "canceled":
-			if err = h.eventBus.Publish(c.Request().Context(), ticketEvent); err != nil {
+			cancelEvent := entities.TicketBookingCanceled{
+				Header:        entities.NewHeader(),
+				TicketID:      ticket.TicketID,
+				CustomerEmail: ticket.CustomerEmail,
+				Price:         ticket.Price,
+			}
+			if err = h.eventBus.Publish(c.Request().Context(), cancelEvent); err != nil {
 				return fmt.Errorf("failed to publish TicketBookingCanceled event: %w", err)
 			}
 		default:

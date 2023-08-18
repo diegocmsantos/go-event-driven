@@ -27,10 +27,18 @@ func NewWatermillRouter(
 		panic(err)
 	}
 
-	eventProcessor.AddHandlers(
+	err = eventProcessor.AddHandlers(
 		cqrs.NewEventHandler(
 			"AppendToTracker",
 			eventHandler.AppendToTracker,
+		),
+		cqrs.NewEventHandler(
+			"StoreTickets",
+			eventHandler.CreateTicket,
+		),
+		cqrs.NewEventHandler(
+			"DeleteTickets",
+			eventHandler.DeleteTicket,
 		),
 		cqrs.NewEventHandler(
 			"TicketRefundToSheet",
@@ -41,6 +49,9 @@ func NewWatermillRouter(
 			eventHandler.IssueReceipt,
 		),
 	)
+	if err != nil {
+		return nil
+	}
 
 	return router
 }
