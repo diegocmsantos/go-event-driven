@@ -38,7 +38,10 @@ func NewTicketRepository(db *sqlx.DB) *TicketRepository {
 }
 
 func (tr TicketRepository) CreateTicket(ctx context.Context, createTicketInput CreateTicketInput) error {
-	_, err := tr.db.ExecContext(ctx, "INSERT INTO tickets (ticket_id, price_amount, price_currency, customer_email) VALUES ($1, $2, $3, $4)",
+	_, err := tr.db.ExecContext(ctx, `
+			INSERT INTO tickets (ticket_id, price_amount, price_currency, customer_email) 
+			VALUES ($1, $2, $3, $4) on conflict (ticket_id) do nothing
+		`,
 		createTicketInput.TicketID,
 		createTicketInput.PriceAmount,
 		createTicketInput.PriceCurrency,

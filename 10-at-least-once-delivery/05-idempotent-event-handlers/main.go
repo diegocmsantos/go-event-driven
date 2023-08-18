@@ -2,6 +2,8 @@ package main
 
 import "context"
 
+var deduplicationPaymentMap = map[string]struct{}{}
+
 type PaymentTaken struct {
 	PaymentID string
 	Amount    int
@@ -32,6 +34,10 @@ func NewPaymentsRepository() *PaymentsRepository {
 }
 
 func (p *PaymentsRepository) SavePaymentTaken(ctx context.Context, event *PaymentTaken) error {
+	if _, ok := deduplicationPaymentMap[event.PaymentID]; ok {
+		return nil
+	}
+	deduplicationPaymentMap[event.PaymentID] = struct{}{}
 	p.payments = append(p.payments, *event)
 	return nil
 }
