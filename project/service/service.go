@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+
 	"tickets/db"
 	ticketHttp "tickets/http"
 	"tickets/message"
@@ -62,6 +63,7 @@ func New(
 	echoRouter := ticketHttp.NewHttpRouter(
 		eventBus,
 		spreadsheetsService,
+		ticketRepository,
 	)
 
 	return Service{

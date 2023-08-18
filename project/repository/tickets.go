@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"tickets/entities"
+
 	"github.com/jmoiron/sqlx"
 )
 
 type TicketRepositoryInt interface {
 	CreateTicket(ctx context.Context, createTicketInput CreateTicketInput) error
 	DeleteTicket(ctx context.Context, createTicketInput DeleteTicketInput) error
+	GetAll(ctx context.Context) ([]entities.Ticket, error)
 }
 
 type CreateTicketInput struct {
@@ -55,4 +58,26 @@ func (tr TicketRepository) DeleteTicket(ctx context.Context, deleteTicketInput D
 		return fmt.Errorf("error deleting ticket: %w", err)
 	}
 	return nil
+}
+
+func (tr TicketRepository) GetAll(ctx context.Context) ([]entities.Ticket, error) {
+	var returnTickets []entities.Ticket
+
+	err := tr.db.SelectContext(
+		ctx,
+		&returnTickets, `
+			SELECT 
+				ticket_id,
+				price_amount as "price.amount", 
+				price_currency as "price.currency",
+				customer_email
+			FROM 
+			    tickets
+		`,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return returnTickets, nil
 }
